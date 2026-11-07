@@ -1,0 +1,74 @@
+name: Ultimate High-Performance RDP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  secure-rdp:
+    runs-on: windows-latest 
+    timeout-minutes: 360 
+
+    steps:
+      - name: Optimize Windows & Disable Password Policies
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
+          
+          # فتح المنافذ في جدار الحماية
+          netsh advfirewall firewall add rule name="RDP-Max" dir=in action=allow protocol=TCP localport=3389
+          powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
+
+          # خطوة هامة: السماح بالاتصال عبر الـ RDP باستخدام حسابات بدون كلمة مرور (Blank Passwords)
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Lsa' -Name "LimitBlankPasswordUse" -Value 0 -Force
+
+      - name: Create Premium RDP User with Blank Password
+        run: |
+          # إنشاء مستخدم بدون تمرير أي كلمة مرور (فارغة تماماً)
+          if (-not (Get-LocalUser -Name "RDP" -ErrorAction SilentlyContinue)) {
+              New-LocalUser -Name "RDP" -NoPassword -AccountNeverExpires -Description "Max Performance User"
+          } else {
+              # إذا كان الحساب موجوداً مسبقاً يتم تصفير كلمته
+              $user = Get-LocalUser -Name "RDP"
+              $user | Clear-LocalUserPassword
+          }
+          
+          Add-LocalGroupMember -Group "Administrators" -Member "RDP"
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
+
+      - name: Install & Connect Tailscale High-Speed
+        run: |
+          $tsUrl = "https://tailscale.com"
+          $installerPath = "$env:TEMP\tailscale.msi"
+          Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath -UseBasicParsing
+          Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
+          Remove-Item $installerPath -Force
+
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTHKEY }} --hostname=turbo-runner-$env:GITHUB_RUN_ID
+          
+          Start-Sleep -Seconds 5
+          $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
+
+      - name: Auto-Inject High Speed Downloader
+        run: |
+          $startupPath = "C:\Users\RDP\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup"
+          if (-not (Test-Path $startupPath)) {
+              New-Item -ItemType Directory -Path $startupPath -Force | Out-Null
+          }
+          $downloadUrl = "https://gitlab.com"
+          Invoke-WebRequest -Uri $downloadUrl -OutFile "$startupPath\Downloads.bat" -UseBasicParsing
+          
+          Write-Host "`n=========================================="
+          Write-Host "🚀 RDP ACCESS DETAILS 🚀"
+          Write-Host "Address/IP: $env:TAILSCALE_IP"
+          Write-Host "Username: RDP"
+          Write-Host "Password: [ NO PASSWORD / BLANK ]"
+          Write-Host "==========================================`n"
+
+      - name: Unlimited Keep-Alive Loop
+        run: |
+          for ($i = 0; $i -lt 72; $i++) {
+              Write-Host "[$(Get-Date)] Server Status: Online & Active"
+              Start-Sleep -Seconds 300
+          }
